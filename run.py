@@ -65,23 +65,9 @@ for i in range(num_file):
 
 data = np.vstack(data) #
 print(data.shape)#batch*nodes*length(8550,5,30)
-true_dag=np.load('sim1/multisim1net/net1.npy')
 #data = torch.FloatTensor(data)
 model = RL(args)
-model.learn(data, dag=true_dag)
-met = MetricsDAG(model.causal_matrix, true_dag)
+model.learn(data)
+
 #print(met.metrics)
 
-'''
-file_path = 'sim1/data1.npy'
-data = []
-data_sam = np.load(file_path).T
-print(data_sam.shape)
-data.append(np.array(time_split(data_sam, step=5)))
-data = np.vstack(data) #
-print(data.shape)#batch*nodes*length(196,5,6)
-true_dag=np.load('sim1/H_hail1.npy')
-print(true_dag)
-n = RL(args)
-n.learn(data, dag=true_dag)
-'''
