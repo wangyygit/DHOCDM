@@ -1,17 +1,3 @@
-# coding=utf-8
-# Copyright (C) 2021. Huawei Technologies Co., Ltd. All rights reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 
 import os
 import logging
@@ -21,14 +7,9 @@ import platform
 import torch
 from dataset_loader import DataGenerator
 from actor import Actor
-from .rewards.Reward_BIC_d import get_Reward
-from .helpers.torch_utils import set_seed
-from .helpers.analyze_utils import convert_graph_int_to_adj_mat, \
-    graph_prunned_by_coef, graph_prunned_by_coef_2nd
-
-
-from metrics import MetricsDAG
-from utils import evaluate_result
+from Reward import get_Reward
+from utils import set_seed
+from utils import convert_graph_int_to_adj_mat,evaluate_result
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +67,7 @@ class RL(object):
 
     def learn(self, X):
         X = torch.FloatTensor(X)
-        self.data_size = X.shape[0] #2000个样本 196
+        self.data_size = X.shape[0]
         causal_matrix = self._rl(X)
         self.causal_matrix = causal_matrix
 
@@ -108,9 +89,7 @@ class RL(object):
         # Initialize useful variables
         #rewards_avg_baseline = []
         #reward_max_per_batch = [] #每个batch最大奖励
-        
-        graphss = []
-        probsss = []
+
         max_rewards = []
         max_reward = float('-inf')
 
@@ -122,18 +101,7 @@ class RL(object):
             if self.verbose:
                 logger.info('Start training for {}-th epoch'.format(j))
 
-            #est_file_1 = 'Encoder' + str(j)  + '.pth'
-            #est_file_1 = os.path.join(self.save_file, est_file_1)
-
-            #est_file_2 = 'Decoder' + str(j) + '.pth'
-            #est_file_2 = os.path.join(self.save_file, est_file_2)
-
             inputs = training_set.train_batch(self.batch_size)
-
-
-            # Test tensor shape
-            #if i == j:
-            #    logging.info('Shape of actor.input: {}'.format(inputs.shape))
 
             # actor
             actor.build_permutation(inputs) #64*10*10
@@ -161,9 +129,6 @@ class RL(object):
                 max_reward = max_reward_batch
 
 
-            # for average reward per batch
-            #reward_batch_score_cyc = np.mean(reward_feed[:,1:], axis=0)
-
             if self.verbose:
                 logger.info('Finish calculating reward for current batch of graph')
 
@@ -175,16 +140,7 @@ class RL(object):
             if self.verbose:
                 logger.info('Finish updating actor and critic network using reward calculated')
 
-
-
-            #rewards_avg_baseline.append(reward_avg_baseline)
-            #rewards_batches.append(reward_batch_score_cyc)
-            #reward_max_per_batch.append(max_reward_batch)
-
-            #graphss.append(graph_batch)
-            #probsss.append(probs)
             max_rewards.append(max_reward)
-            #actor.build_save(est_file_1,est_file_2)
             print('[iter {}], reward_batch: {:.4}, max_reward: {:.4}, max_reward_batch: {:.4}'.format(j,
                             reward_batch, max_reward, max_reward_batch),file=log,flush=True)
             # logging
@@ -200,28 +156,6 @@ class RL(object):
                 logger.info('col.sum_tol {}'.format(graph_batch.sum()))
                 save_graph=self.save_file+'/'+str(j)+'.npy'
                 np.save(save_graph,graph_batch)
-                print(graph_batch)
-
-                graph_batch_pruned = np.array(graph_prunned_by_coef(graph_batch, inputs))
-                if self.dag:
-                    met = MetricsDAG(graph_batch, self.dag)
-                    met2 = MetricsDAG(graph_batch_pruned, self.dag)
-                    acc_est = met.metrics
-                    acc_est2 = met2.metrics
-
-
-                    fdr, tpr, fpr, shd, nnz, precision, recall, F1 = \
-                        acc_est['fdr'], acc_est['tpr'], acc_est['fpr'], acc_est['shd'], acc_est['nnz'],\
-                        acc_est['precision'],acc_est['recall'], acc_est['F1']
-                    fdr2, tpr2, fpr2, shd2, nnz2 , precision2, recall2, F12= \
-                        acc_est2['fdr'], acc_est2['tpr'], acc_est2['fpr'], \
-                            acc_est2['shd'], acc_est2['nnz'],acc_est2['precision'],acc_est2['recall'], acc_est2['F1']
-
-
-                    logger.info(
-                        'before pruning: fdr {}, tpr {}, fpr {}, shd {}, nnz {}, precision {}, recall {}, F1 {}'.format(fdr, tpr, fpr, shd, nnz, precision, recall, F1))
-                    logger.info(
-                        'after  pruning: fdr {}, tpr {}, fpr {}, shd {}, nnz {}, precision {}, recall {}, F1 {}'.format(fdr2, tpr2, fpr2, shd2, nnz2,  precision2, recall2, F12))
 
         logger.info('Training COMPLETED !')
 

@@ -1,12 +1,15 @@
 import argparse
 import numpy as np
+import random
 import torch
 import os
 import torch.nn.functional as F
 import pandas as pd
 from sklearn.metrics import roc_auc_score, roc_curve, precision_recall_curve, auc, accuracy_score
 from sklearn.metrics import precision_recall_fscore_support as prfs
-
+import numpy as np
+from sklearn.linear_model import LinearRegression
+from sklearn.preprocessing import PolynomialFeatures
 '''
 def get_graph_kernel(A, coef=1):
     #根据邻接矩阵计算图卷积核
@@ -18,55 +21,6 @@ def get_graph_kernel(A, coef=1):
     return L
 '''
 
-
-def build_flags():
-    parser = argparse.ArgumentParser()
-    # 以下是全局参数
-    parser.add_argument('--gpu-idx', type=int, default=0, help='set the gpu')
-    parser.add_argument('--seed', type=int, default=620, help='Random seed.')
-    parser.add_argument('--num-nodes', type=int, default=5,
-                        help='Number of nodes in simulation.')
-    parser.add_argument('--dims', type=int, default=1,
-                        help='The number of input dimensions.')
-    parser.add_argument('--threshold', type=float, default=0.3,
-                        help='The threshold of evaluating causality.')
-    parser.add_argument('--time-length', type=int, default=1000,
-                        help='The length of time series.')
-
-    # 以下是网络训练参数
-    parser.add_argument('--val-epochs', type=int, default=300,
-                        help='Number of epochs to train the val net.')
-    parser.add_argument('--est-epochs', type=int, default=500,
-                        help='Number of epochs to train the est net.')
-    parser.add_argument('--batch-size', type=int, default=128,
-                        help='Number of samples per batch.')
-    parser.add_argument('--lr_val', type=float, default=1e-2,
-                        help='Initial learning rate.')
-    parser.add_argument('--lr_est', type=float, default=1e-3,
-                        help='Initial learning rate.')
-    parser.add_argument('--weight-decay', type=float, default=1e-3,
-                        help='Weight decay.')
-    parser.add_argument('--sparsity-type', type=str, default='l2',
-                        help='The type of sparsity loss.')
-    parser.add_argument('--beta-sparsity', type=float, default=1,
-                        help='The Weight of sparsity loss.')
-    parser.add_argument('--beta-kl', type=float, default=1e-1,
-                        help='The Weight of KL loss.')
-    parser.add_argument('--beta-mmd', type=float, default=1,
-                        help='The Weight of MMD loss.')
-
-    # 以下是网络架构参数
-    parser.add_argument('--est-hidden', type=int, default=15,
-                        help='Number of hidden units.')
-    parser.add_argument('--val-hidden', type=int, default=15,
-                        help='Number of hidden units.')
-    parser.add_argument('--est-dropout', type=float, default=0.3,
-                        help='Dropout rate (1 - keep probability).')
-    parser.add_argument('--val-dropout', type=float, default=0.3,
-                        help='Dropout rate (1 - keep probability).')
-    parser.add_argument('--root-folder', type=str, default='logs',
-                        help='Where to save the trained model, leave empty to not save anything.')
-    return parser
 
 
 def time_split(T, step=30):
@@ -80,11 +34,6 @@ def time_split(T, step=30):
         start += 1
         end += 1
     return samples
-
-
-
-
-
 
 
 def evaluate_result(causality_true, causality_pred, threshold):
@@ -173,62 +122,23 @@ def count_accuracy(B_true, B_est):
     # return [acc, fdr, tpr, fpr, shd, pred_size]
 
 
-def save_result(result, model_name, folder):
-    filename = model_name + '_result.xls'
-    filename = os.path.join(folder, filename)
-    result = pd.DataFrame(result, index=[model_name])
-    result.to_excel(filename)
-
-
-def summary_result(data):
-    idx = 0
-    for temp in data:
-        temp = pd.DataFrame(temp, index=[idx])
-        if idx == 0:
-            result = temp
-        else:
-            result = pd.concat([result, temp])
-        idx += 1
-    result = result.agg([np.mean, np.std])
-    mean = result.loc['mean'].values
-    std = result.loc['std'].values
-    return mean, std
-
-
-
-def kl_divergence(x, target):
-    epsilon = 1e-6
-    return torch.mean(x * torch.log((x+epsilon)/target))
-
-
-def loss_sparsity(inputs, sparsity_type='l2', epsilon=1e-4):
-    if sparsity_type == 'l1':
-        return torch.mean(torch.abs(inputs))
-    elif sparsity_type == 'log_sum':
-        return torch.mean(torch.log(torch.abs(inputs) / epsilon + 1))
-    else:
-        return torch.mean(inputs ** 2)
-
-
-def loss_divergence(inputs, divergence_type='entropy', rho=0.1):
-    epsilon = 1e-6
-    inputs = torch.abs(inputs)
-    inputs = inputs.squeeze().mean(dim=2).mean(dim=0)
-    if divergence_type == 'entropy':
-        return -1 * torch.mean(inputs * torch.log(inputs + epsilon))
-    elif divergence_type == 'JS':
-        m = (rho + inputs) / 2
-        return kl_divergence(inputs, m) / 2 + kl_divergence(rho, m) / 2
-    else:
-        return kl_divergence(inputs, rho)
-
-
-def loss_mmd(x, y, idx, gamma=1):
-    loss1 = torch.exp(-1 * gamma * (x - torch.repeat_interleave(x[:, idx:idx + 1, :, :], x.size(1), dim=1)) ** 2)
-    loss2 = torch.exp(-1 * gamma * (x - torch.repeat_interleave(y.unsqueeze(1), x.size(1), dim=1)) ** 2)
-    loss = torch.abs(torch.mean(loss1) - torch.mean(loss2))
-    #loss = torch.mean((loss1 - loss2)*2)
-    return loss
+def set_seed(seed):
+    """
+    Referred from:
+    - https://stackoverflow.com/questions/38469632/tensorflow-non-repeatable-results
+    """
+    # Reproducibility
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    # torch.backends.cudnn.deterministic = True
+    # torch.backends.cudnn.benchmark = True
+    try:
+        os.environ['PYTHONHASHSEED'] = str(seed)
+    except:
+        pass
 
 def dense_actor_loss(reward, avg_baseline, predict_reward, log_softmax,
                      device=None) -> torch.Tensor:
@@ -255,3 +165,95 @@ def dense_critic_loss(reward, avg_baseline, predict_reward,
     critic_loss = F.mse_loss(reward - avg_baseline,  predict_reward)
 
     return critic_loss
+
+
+def graph_prunned_by_coef(graph_batch, X, th=0.1):
+    """
+    for a given graph, pruning the edge according to edge weights;
+    linear regression for each causal regression for edge weights and then thresholding
+    :param graph_batch: graph
+    :param X: dataset
+    :return:
+    """
+    mse = []
+    d = len(graph_batch)
+    reg = LinearRegression(fit_intercept=False)
+    W = []
+    # X = np.array(X).T
+    for i in range(d):
+        col = np.abs(graph_batch[:, i]) > 0.1
+        if np.sum(col) <= 0.1:
+            W.append(np.zeros(d))
+            continue
+
+        X_train = X[:, :, -2].reshape(-1, d)[:, col]
+        # mul = aux_matrix[:, i].reshape(1, -1)[:, col]
+        # X_train = np.multiply(X_train, mul)
+        y_train = X[:, :, -1].reshape(-1, d)[:, i]
+        reg.fit(X_train, y_train)
+        reg_coeff = reg.coef_
+        y_pre = reg.predict(X_train)
+        # print(y.shape)
+        # print(y_pre.shape)
+        mse.append(np.square(y_train - y_pre))
+        cj = 0
+        new_reg_coeff = np.zeros(d, )
+        for ci in range(d):
+            if col[ci]:
+                new_reg_coeff[ci] = reg_coeff[cj]
+                cj += 1
+
+        W.append(new_reg_coeff)
+
+    return np.float32(np.abs(W) > th)
+
+
+def graph_prunned_by_coef_2nd(graph_batch, X, th=0.3):
+    """
+    for a given graph, pruning the edge according to edge weights;
+    quadratic regression for each causal regression for edge weights and then thresholding
+    :param graph_batch: graph
+    :param X: dataset
+    :return:
+    """
+    d = len(graph_batch)
+    reg = LinearRegression()
+    poly = PolynomialFeatures()
+    W = []
+
+    for i in range(d):
+        col = graph_batch[i] > 0.1
+        if np.sum(col) <= 0.1:
+            W.append(np.zeros(d))
+            continue
+
+        X_train = X[:, col]
+        X_train_expand = poly.fit_transform(X_train)[:, 1:]
+        X_train_expand_names = poly.get_feature_names_out()[1:]
+
+        y = X[:, i]
+        reg.fit(X_train_expand, y)
+        reg_coeff = reg.coef_
+
+        cj = 0
+        new_reg_coeff = np.zeros(d, )
+
+        for ci in range(d):
+            if col[ci]:
+                xxi = 'x{}'.format(cj)
+                for iii, xxx in enumerate(X_train_expand_names):
+                    if xxi in xxx:
+                        if np.abs(reg_coeff[iii]) > th:
+                            new_reg_coeff[ci] = 1.0
+                            break
+                cj += 1
+        W.append(new_reg_coeff)
+
+    return W
+
+
+def convert_graph_int_to_adj_mat(graph_int):
+    # Convert graph int to binary adjacency matrix
+    # TODO: Make this more readable
+    return np.array([list(map(int, ((len(graph_int) - len(np.base_repr(curr_int))) * '0' + np.base_repr(curr_int))))
+                     for curr_int in graph_int], dtype=int)

@@ -94,9 +94,6 @@ class get_Reward(object):
 
             RSSi = np.sum(np.square(y_err))
 
-            # if the regresors include the true parents, GPR would result in very samll values, e.g., 10^-13
-            # so we add 1.0, which does not affect the monotoniticy of the score
-
             RSS_ls.append(RSSi)
             self.d_RSS[graph_to_int[i]] = RSSi
 
@@ -109,7 +106,6 @@ class get_Reward(object):
 
         return score
 
-    #### helper
 
     def update_scores(self, score):
         ls = []
