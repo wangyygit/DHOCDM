@@ -45,29 +45,11 @@ args = parser.parse_args()
 
 #加载数据
 file_path = 'sim1/multisim1'
-files = os.listdir(file_path)
-num_file = len(files)
-data = []
-for i in range(num_file):
-    #读取数据
+data = np.load(data_path)
 
-    data_path = file_path + '/' + files[i]
-    data_sam = np.load(data_path)
-    print(data_sam.shape)
-    #data_sam=pd.read_csv(data_path, header=None)
-    data_sam = np.array(data_sam)[:,0:103]
-    #data_sam = np.load(data_path)
-    #print(data_sam.shape)
-    #data.append(np.array(time_split(data_sam, step=5)))
-    #data_sam = np.load(data_path)[:, 235:300]
-    print(np.array(time_split(data_sam, step=5)).shape)
-    data.append(np.array(time_split(data_sam, step=5)))
-
-data = np.vstack(data) #
-print(data.shape)#batch*nodes*length(8550,5,30)
+print(data.shape)#num*nodes*length
 #data = torch.FloatTensor(data)
 model = RL(args)
 model.learn(data)
 
-#print(met.metrics)
 
