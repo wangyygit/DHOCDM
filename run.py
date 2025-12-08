@@ -47,9 +47,9 @@ args = parser.parse_args()
 file_path = 'sim1/multisim1'
 data = np.load(data_path)
 
-print(data.shape)#num*nodes*length
 #data = torch.FloatTensor(data)
 model = RL(args)
 model.learn(data)
+
 
 
