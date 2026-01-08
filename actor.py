@@ -75,7 +75,7 @@ class HypergraphDecoder(nn.Module):
 
     def __init__(self, batch_size,input_embed,nodes_num,
                  decoder_hidden_dim, decoder_activation, use_bias,
-                 bias_initial_value, use_bias_constant, is_train, device=None):
+                 bias_initial_value, use_bias_constant, d, h, is_train, device=None):
 
         super().__init__()
 
@@ -90,7 +90,9 @@ class HypergraphDecoder(nn.Module):
         self.use_bias_constant = use_bias_constant
         self.device = device
         self.is_training = is_train
-
+        self.edges_num = self.nodes_num           
+        self.h = h
+        self.d = d
         if self.decoder_activation == 'tanh':    # Original implementation by paper
             self.activation = nn.Tanh()
         elif self.decoder_activation == 'relu':
@@ -100,13 +102,15 @@ class HypergraphDecoder(nn.Module):
         self._wr = nn.Parameter(torch.FloatTensor(*(self.input_embed, self.decoder_hidden_dim)).to(self.device))
         self._u = nn.Parameter(torch.FloatTensor(*(self.decoder_hidden_dim, 1)).to(self.device))
         self._l = nn.Parameter(torch.FloatTensor(1).to(self.device))
-
+        # 固定 N 条边的 query
+        self.edge_query = nn.Parameter(torch.randn(self.edges_num, self.d))
         self.reset_parameters()
 
     def reset_parameters(self):
         nn.init.xavier_uniform_(self._wl)
         nn.init.xavier_uniform_(self._wr)
         nn.init.xavier_uniform_(self._u)
+        nn.init.xavier_uniform_(self.edge_query)
 
         if self.bias_initial_value is None:  # Randomly initialize the learnable bias
             bias_initial_value = torch.randn([1]).numpy()[0]
@@ -118,6 +122,16 @@ class HypergraphDecoder(nn.Module):
         nn.init.constant_(self._l, bias_initial_value)
 
     def forward(self, encoder_output):
+        
+        # 边权重
+        self.edge_weight_mlp = nn.Sequential(
+                nn.Linear(self.d, self.h),
+                nn.ReLU(),
+                nn.Linear(self.h, 1)
+                )
+        w_logits = self.edge_weight_mlp(edge_q).squeeze(-1)
+        w = F.softplus(w_logits) + 1e-8  # 保证正
+        
         # encoder_output is a tensor of size [batch_size, max_length, input_embed]
         W_l = self._wl
         W_r = self._wr
@@ -174,7 +188,7 @@ class HypergraphDecoder(nn.Module):
             self.mask_scores.append(masked_score)
             self.entropy.append(prob.entropy())
 
-        return self.samples, self.mask_scores, self.entropy
+        return self.samples, self.mask_scores, self.entropy, w
 
 class Actor(object):
     _logger = logging.getLogger(__name__)
@@ -200,6 +214,8 @@ class Actor(object):
         #Critic 参数
         self.hidden_dim_critic=arg.hidden_dim_critic
         self.init_baseline=arg.init_baseline
+        self.h = arg.h
+        self.d = arg.d
 
         # Reward config
         self.avg_baseline = torch.tensor([self.init_baseline],dtype=torch.float,device=self.device)
@@ -234,6 +250,8 @@ class Actor(object):
                 use_bias=self.use_bias,
                 bias_initial_value=self.bias_initial_value,
                 use_bias_constant=self.use_bias_constant,
+                d=self.d,
+                h=self.h,
                 is_train=self.is_train,
                 device=self.device)
 
